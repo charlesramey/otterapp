@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Back Button -->
+    <Button
+        android:id="@+id/btnBack"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Back"
+        style="@style/Widget.Material3.Button.TextButton" />
+
+    <!-- Title -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="What would you like to do?"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginTop="40dp"
+        android:layout_marginBottom="40dp" />
+
+    <!-- Begin New Collection Button -->
+    <Button
+        android:id="@+id/btnBeginNewCollection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Begin New Collection"
+        android:textSize="16sp"
+        android:layout_marginBottom="16dp"
+        style="@style/Widget.Material3.Button" />
+
+    <!-- Maintain Existing Collection Button -->
+    <Button
+        android:id="@+id/btnMaintainCollection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Maintenance Mode"
+        android:textSize="16sp"
+        style="@style/Widget.Material3.Button.TonalButton" />
+
+</LinearLayout>

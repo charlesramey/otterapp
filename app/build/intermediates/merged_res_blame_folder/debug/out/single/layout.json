@@ -1,0 +1,34 @@
+[
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_start_recording.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_start_recording.xml"
+    },
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_tutorial.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_tutorial.xml"
+    },
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_power_on_device.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_power_on_device.xml"
+    },
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_begin_new_collection.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_begin_new_collection.xml"
+    },
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_maintenance_mode.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_maintenance_mode.xml"
+    },
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_launcher.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_launcher.xml"
+    },
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_experienced_user.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_experienced_user.xml"
+    },
+    {
+        "merged": "com.example.otterenrichment.app-mergeDebugResources-32:/layout/activity_main.xml",
+        "source": "com.example.otterenrichment.app-main-35:/layout/activity_main.xml"
+    }
+]

@@ -1,0 +1,4 @@
+#Tue Jan 13 16:33:34 EST 2026
+base.0=/Users/charles/Downloads/OtterEnrichment/app/build/intermediates/dex/debugAndroidTest/mergeProjectDexDebugAndroidTest/0/classes.dex
+path.0=0/classes.dex
+renamed.0=classes.dex

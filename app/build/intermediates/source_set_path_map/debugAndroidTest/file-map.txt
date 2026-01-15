@@ -1,0 +1,4 @@
+com.example.otterenrichment.test.app-androidTest-0 /Users/charles/Downloads/OtterEnrichment/app/build/generated/res/resValues/androidTest/debug
+com.example.otterenrichment.test.app-mergeDebugAndroidTestResources-1 /Users/charles/Downloads/OtterEnrichment/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/merged.dir
+com.example.otterenrichment.test.app-mergeDebugAndroidTestResources-2 /Users/charles/Downloads/OtterEnrichment/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/stripped.dir
+com.example.otterenrichment.test.app-merged_res-3 /Users/charles/Downloads/OtterEnrichment/app/build/intermediates/merged_res/debugAndroidTest
