@@ -82,9 +82,11 @@ data class StatusResponse(
 )
 
 data class FilesResponse(
-    val files: List<FileItem>
+    val files: List<FileItem>,
+    val sd_usage_percent: Float = 0f
 )
 
 data class FileItem(
-    val name: String
+    val name: String,
+    val size: Long = 0
 )

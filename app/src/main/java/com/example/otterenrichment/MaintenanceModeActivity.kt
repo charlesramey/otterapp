@@ -182,7 +182,7 @@ class MaintenanceModeActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val filesResponse = response.body()
                     val files = filesResponse?.files?.map {
-                        ScallopFile(it.name, 0) // Size not provided by API
+                        ScallopFile(it.name, it.size)
                     } ?: emptyList()
 
                     currentFiles = files
@@ -194,7 +194,8 @@ class MaintenanceModeActivity : AppCompatActivity() {
                         showToast("Found ${files.size} files")
                     }
 
-                    binding.tvSdUsage.text = "SD Card: Usage N/A"
+                    val usage = filesResponse?.sd_usage_percent ?: 0f
+                    binding.tvSdUsage.text = "SD Card: ${String.format("%.1f", usage)}% used"
                 } else {
                     showToast("Failed to list files")
                 }
