@@ -119,6 +119,11 @@ class StartRecordingActivity : AppCompatActivity() {
             startDataCollection()
         }
 
+        // Scan button
+        binding.btnScan.setOnClickListener {
+            startDeviceDetection()
+        }
+
         // Device Options buttons
         binding.btnCheckBattery.setOnClickListener {
             checkBattery()
@@ -209,35 +214,40 @@ class StartRecordingActivity : AppCompatActivity() {
         val network = connectivityManager.activeNetwork
         val capabilities = connectivityManager.getNetworkCapabilities(network)
 
-        val isConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val isWifiConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
 
-        if (isConnected) {
-            binding.tvConnectionStatus.text = "✓ Connected"
-            binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_green_dark))
-
-            lastConnectionTime = System.currentTimeMillis()
-
-            // Check if we just connected to a device network
+        if (isWifiConnected) {
             val wifiInfo = wifiManager.connectionInfo
             val currentSsid = wifiInfo.ssid.replace("\"", "")
             val isDeviceNetwork = recognizedDeviceNames.any { currentSsid.lowercase().startsWith(it) }
 
-            if (isDeviceNetwork && !connectedToDeviceNetwork) {
-                connectedToDeviceNetwork = true
-                onConnectedToDevice(currentSsid)
-            } else if (!isDeviceNetwork) {
+            if (isDeviceNetwork) {
+                binding.tvConnectionStatus.text = "✓ Connected to Device"
+                binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_green_dark))
+
+                if (!connectedToDeviceNetwork) {
+                    connectedToDeviceNetwork = true
+                    onConnectedToDevice(currentSsid)
+                }
+            } else {
+                binding.tvConnectionStatus.text = "⚠ WiFi Connected (No Device)"
+                binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.darker_gray))
                 connectedToDeviceNetwork = false
             }
 
-            // Try to get battery level (placeholder)
-            lifecycleScope.launch {
-                try {
-                    lastBatteryLevel = 85f // Placeholder
-                } catch (e: Exception) { }
-            }
+            lastConnectionTime = System.currentTimeMillis()
+
+            // Update Spinner Logic
+            updateConnectedDevices()
+            updateDeviceSpinner()
+
         } else {
             connectedToDeviceNetwork = false
-            showWifiError()
+            binding.tvConnectionStatus.text = "✗ Disconnected"
+            binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_red_dark))
+
+            updateConnectedDevices()
+            updateDeviceSpinner()
         }
     }
 
