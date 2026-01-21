@@ -31,9 +31,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -505,21 +508,48 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (response.isSuccessful) {
-                    val filesResponse = response.body()
-                    val files = filesResponse?.files?.map {
-                        ScallopFile(it.name, it.size)
-                    } ?: emptyList()
+                    val responseBodyString = response.body()?.string() ?: "{}"
+                    val jsonObject = JSONObject(responseBodyString)
 
-                    currentFiles = files
-                    fileAdapter.submitList(files)
+                    val filesArray = jsonObject.optJSONArray("files")
+                    val files = mutableListOf<ScallopFile>()
 
-                    if (files.isEmpty()) {
-                        showToast("No files found on SD card")
-                    } else {
-                        showToast("Found ${files.size} files")
+                    if (filesArray != null) {
+                        for (i in 0 until filesArray.length()) {
+                            val fileObj = filesArray.optJSONObject(i)
+                            if (fileObj != null) {
+                                val name = fileObj.optString("name", "unknown")
+                                val size = fileObj.optLong("size", 0)
+                                files.add(ScallopFile(name, size))
+                            }
+                        }
                     }
 
-                    val usage = filesResponse?.sd_usage_percent ?: 0f
+                    // Sort files: Newest date first
+                    val sortedFiles = files.sortedByDescending { file ->
+                        try {
+                            if (file.name.startsWith("scallop_")) {
+                                val datePart = file.name.substringAfter("scallop_").substringBefore(".")
+                                val format = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
+                                format.parse(datePart)?.time ?: 0L
+                            } else {
+                                0L
+                            }
+                        } catch (e: Exception) {
+                            0L
+                        }
+                    }
+
+                    currentFiles = sortedFiles
+                    fileAdapter.submitList(sortedFiles)
+
+                    if (sortedFiles.isEmpty()) {
+                        showToast("No files found on SD card")
+                    } else {
+                        showToast("Found ${sortedFiles.size} files")
+                    }
+
+                    val usage = jsonObject.optDouble("sd_usage_percent", 0.0).toFloat()
                     binding.tvSdUsage.text = "SD Card: ${String.format("%.1f", usage)}% used"
                 } else {
                     showToast("Failed to list files")

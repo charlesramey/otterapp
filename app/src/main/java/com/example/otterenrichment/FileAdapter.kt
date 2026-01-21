@@ -19,7 +19,7 @@ class FileAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FileViewHolder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(android.R.layout.simple_list_item_multiple_choice, parent, false)
+            .inflate(R.layout.item_file, parent, false)
         return FileViewHolder(view, onFileClick, onFileSelect, isSelectionMode)
     }
 

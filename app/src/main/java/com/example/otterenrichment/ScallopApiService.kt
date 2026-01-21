@@ -22,7 +22,7 @@ interface ScallopApi {
     suspend fun updateTime(@Field("time") time: Long): Response<ResponseBody>
 
     @GET("api/files")
-    suspend fun listFiles(): Response<FilesResponse>
+    suspend fun listFiles(): Response<ResponseBody>
 
     @GET("api/download")
     suspend fun requestDownload(@Query("file") fileName: String): Response<ResponseBody>
