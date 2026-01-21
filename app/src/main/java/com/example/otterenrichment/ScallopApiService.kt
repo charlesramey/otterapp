@@ -33,6 +33,9 @@ interface ScallopApi {
 
     @POST("api/sleep")
     suspend fun sleep(): Response<ResponseBody>
+
+    @POST("delete-files")
+    suspend fun deleteFiles(@Body body: DeleteFilesRequest): Response<ResponseBody>
 }
 
 /**
@@ -89,4 +92,8 @@ data class FilesResponse(
 data class FileItem(
     val name: String,
     val size: Long = 0
+)
+
+data class DeleteFilesRequest(
+    val files: List<String>
 )

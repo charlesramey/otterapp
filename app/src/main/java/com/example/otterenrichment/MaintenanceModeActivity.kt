@@ -265,7 +265,48 @@ class MaintenanceModeActivity : AppCompatActivity() {
     }
 
     private fun deleteSelectedFiles() {
-        showToast("Delete functionality is not supported by the device.")
+        val filesToDelete = currentFiles.filter { it.isSelected }.map { it.name }
+        if (filesToDelete.isEmpty()) {
+            showToast("No files selected")
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Delete Files")
+            .setMessage("Are you sure you want to delete ${filesToDelete.size} files?")
+            .setPositiveButton("Delete") { _, _ ->
+                performDeleteFiles(filesToDelete)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun performDeleteFiles(files: List<String>) {
+        lifecycleScope.launch {
+            try {
+                binding.progressBarDownload.visibility = View.VISIBLE
+
+                val request = DeleteFilesRequest(files)
+                val response = withContext(Dispatchers.IO) {
+                    ScallopApiService.api.deleteFiles(request)
+                }
+
+                if (response.isSuccessful) {
+                    showToast("Files deleted successfully")
+                    // Refresh file list
+                    listFiles()
+                    // Reset selection mode
+                    isSelectionMode = false
+                    toggleDeleteMode()
+                } else {
+                    showToast("Failed to delete files")
+                }
+            } catch (e: Exception) {
+                showToast("Error: ${e.message}")
+            } finally {
+                binding.progressBarDownload.visibility = View.GONE
+            }
+        }
     }
 
     private fun openFirmwareUpdate() {
