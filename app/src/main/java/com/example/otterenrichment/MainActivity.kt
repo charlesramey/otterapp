@@ -239,8 +239,20 @@ class MainActivity : AppCompatActivity() {
                 binding.layoutCountdown.visibility = View.GONE
                 disableControls(false)
                 showToast("Data collection complete")
+                showReconnectDialog()
             }
         }.start()
+    }
+
+    private fun showReconnectDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Data Collection Complete")
+            .setMessage("Data collection has finished. Please reconnect to the device's WiFi network to download the data.")
+            .setPositiveButton("WiFi Settings") { _, _ ->
+                startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+            }
+            .setNegativeButton("OK", null)
+            .show()
     }
 
     private fun disableControls(disable: Boolean) {
