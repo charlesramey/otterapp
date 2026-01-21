@@ -188,8 +188,6 @@ class StartRecordingActivity : AppCompatActivity() {
             binding.btnCheckBattery.isEnabled = false
             binding.btnDownloadData.isEnabled = false
             binding.btnListFiles.isEnabled = false
-            binding.btnDeleteFiles.isEnabled = false
-            binding.btnFirmwareUpdate.isEnabled = false
             binding.btnPowerOff.isEnabled = false
         } else {
             // Devices connected - populate spinner
@@ -203,8 +201,6 @@ class StartRecordingActivity : AppCompatActivity() {
             binding.btnCheckBattery.isEnabled = true
             binding.btnDownloadData.isEnabled = true
             binding.btnListFiles.isEnabled = true
-            binding.btnDeleteFiles.isEnabled = true
-            binding.btnFirmwareUpdate.isEnabled = true
             binding.btnPowerOff.isEnabled = true
         }
     }
