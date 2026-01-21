@@ -52,28 +52,11 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
-        <!-- Begin New Collection Activity -->
-        <activity
-            android:name=".BeginNewCollectionActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <!-- Power On Device Activity -->
-        <activity
-            android:name=".PowerOnDeviceActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
         <!-- Start Recording Activity -->
         <activity
             android:name=".StartRecordingActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
-
-        <!-- Main Activity - Device Control -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="false" />
     </application>
 
 </manifest>

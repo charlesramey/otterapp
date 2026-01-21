@@ -78,6 +78,15 @@ class MaintenanceModeActivity : AppCompatActivity() {
             updateConnectionStatus()
         }
 
+        // Advanced Options Section
+        binding.btnFirmwareUpdate.setOnClickListener {
+            openFirmwareUpdate()
+        }
+
+        binding.btnSleepMode.setOnClickListener {
+            sendSleepCommand()
+        }
+
         // Data Download Section
         binding.btnListFiles.setOnClickListener {
             listFiles()
@@ -257,6 +266,47 @@ class MaintenanceModeActivity : AppCompatActivity() {
 
     private fun deleteSelectedFiles() {
         showToast("Delete functionality is not supported by the device.")
+    }
+
+    private fun openFirmwareUpdate() {
+        AlertDialog.Builder(this)
+            .setTitle("Firmware Update")
+            .setMessage("This will open the OTA update page in your browser.\n\nURL: http://192.168.4.1/update")
+            .setPositiveButton("Open Browser") { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW)
+                intent.data = android.net.Uri.parse("http://192.168.4.1/update")
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun sendSleepCommand() {
+        AlertDialog.Builder(this)
+            .setTitle("Enter Sleep Mode")
+            .setMessage("Device will enter sleep mode. Are you sure?")
+            .setPositiveButton("Yes") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        binding.progressBarPower.visibility = View.VISIBLE
+                        val response = withContext(Dispatchers.IO) {
+                            ScallopApiService.api.sleep()
+                        }
+
+                        if (response.isSuccessful) {
+                            showToast("Device entering sleep mode")
+                        } else {
+                            showToast("Failed to send sleep command")
+                        }
+                    } catch (e: Exception) {
+                        showToast("Error: ${e.message}")
+                    } finally {
+                        binding.progressBarPower.visibility = View.GONE
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun downloadFile(file: ScallopFile) {

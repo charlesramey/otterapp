@@ -41,7 +41,7 @@ class ExperiencedUserActivity : AppCompatActivity() {
     }
 
     private fun navigateToNewCollection() {
-        val intent = Intent(this, BeginNewCollectionActivity::class.java)
+        val intent = Intent(this, StartRecordingActivity::class.java)
         startActivity(intent)
         finish()
     }

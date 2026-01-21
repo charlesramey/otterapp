@@ -133,27 +133,9 @@ class StartRecordingActivity : AppCompatActivity() {
             listFiles()
         }
 
-        binding.btnDeleteFiles.setOnClickListener {
-            toggleDeleteMode()
-        }
-
-        binding.btnDeleteSelected.setOnClickListener {
-            deleteSelectedFiles()
-        }
-
-        binding.btnFirmwareUpdate.setOnClickListener {
-            openFirmwareUpdate()
-        }
-
         // Power Off button
         binding.btnPowerOff.setOnClickListener {
             powerOffDevice()
-        }
-
-        // Add Additional Device button
-        binding.btnAddDevice.setOnClickListener {
-            val intent = Intent(this, PowerOnDeviceActivity::class.java)
-            startActivity(intent)
         }
 
         // Setup RecyclerView for files
@@ -173,7 +155,6 @@ class StartRecordingActivity : AppCompatActivity() {
         // Initially hide sections
         binding.layoutCountdown.visibility = View.GONE
         binding.layoutDataDownload.visibility = View.GONE
-        binding.btnDeleteSelected.visibility = View.GONE
     }
 
     private fun updateConnectedDevices() {
@@ -623,28 +604,6 @@ class StartRecordingActivity : AppCompatActivity() {
         }
     }
 
-    private fun toggleDeleteMode() {
-        isSelectionMode = !isSelectionMode
-
-        fileAdapter = FileAdapter(
-            onFileClick = { file -> if (!isSelectionMode) downloadFile(file) },
-            onFileSelect = { file, isSelected ->
-                currentFiles.find { it.name == file.name }?.isSelected = isSelected
-            },
-            isSelectionMode = isSelectionMode
-        )
-
-        binding.recyclerViewFiles.adapter = fileAdapter
-        fileAdapter.submitList(currentFiles.toList())
-
-        binding.btnDeleteSelected.visibility = if (isSelectionMode) View.VISIBLE else View.GONE
-        binding.btnDeleteFiles.text = if (isSelectionMode) "Cancel" else "Delete Files"
-    }
-
-    private fun deleteSelectedFiles() {
-        showToast("Delete functionality is not supported by the device.")
-    }
-
     private fun downloadFile(file: ScallopFile) {
         if (!isWifiConnected()) {
             showWifiError()
@@ -698,24 +657,6 @@ class StartRecordingActivity : AppCompatActivity() {
             e.printStackTrace()
             false
         }
-    }
-
-    private fun openFirmwareUpdate() {
-        if (!isWifiConnected()) {
-            showWifiError()
-            return
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Firmware Update")
-            .setMessage("This will open the OTA update page in your browser.\n\nURL: http://192.168.4.1/update")
-            .setPositiveButton("Open Browser") { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW)
-                intent.data = android.net.Uri.parse("http://192.168.4.1/update")
-                startActivity(intent)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun powerOffDevice() {
