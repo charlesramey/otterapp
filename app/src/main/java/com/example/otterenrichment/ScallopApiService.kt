@@ -19,7 +19,7 @@ interface ScallopApi {
 
     @FormUrlEncoded
     @POST("api/time")
-    suspend fun updateTime(@Field("time") time: Long): Response<String>
+    suspend fun updateTime(@Field("time") time: Long): Response<ResponseBody>
 
     @GET("api/files")
     suspend fun listFiles(): Response<FilesResponse>
@@ -29,10 +29,10 @@ interface ScallopApi {
 
     @FormUrlEncoded
     @POST("api/collect")
-    suspend fun startCollection(@Field("duration_ms") durationMs: Long): Response<String>
+    suspend fun startCollection(@Field("duration_ms") durationMs: Long): Response<ResponseBody>
 
     @POST("api/sleep")
-    suspend fun sleep(): Response<String>
+    suspend fun sleep(): Response<ResponseBody>
 }
 
 /**
