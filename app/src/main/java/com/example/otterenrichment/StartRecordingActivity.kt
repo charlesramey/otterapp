@@ -1,10 +1,14 @@
 package com.example.otterenrichment
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.os.Environment
@@ -19,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.otterenrichment.databinding.ActivityStartRecordingBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
@@ -34,6 +39,7 @@ class StartRecordingActivity : AppCompatActivity() {
     private lateinit var binding: ActivityStartRecordingBinding
     private lateinit var fileAdapter: FileAdapter
     private lateinit var wifiManager: WifiManager
+    private lateinit var connectivityManager: ConnectivityManager
     private var currentFiles = listOf<ScallopFile>()
     private var isSelectionMode = false
     private var countDownTimer: CountDownTimer? = null
@@ -49,16 +55,47 @@ class StartRecordingActivity : AppCompatActivity() {
     private var lastConnectionTime: Long = System.currentTimeMillis()
     private var lastBatteryLevel: Float = 0f
 
+    // Scanning variables
+    private var isScanning = false
+    private var previousNetworks = setOf<String>()
+    private var connectedToDeviceNetwork = false
+    private val SCAN_INTERVAL_MS = 1000L
+
+    private val wifiScanReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                WifiManager.SCAN_RESULTS_AVAILABLE_ACTION -> {
+                    handleScanResults()
+                }
+                WifiManager.NETWORK_STATE_CHANGED_ACTION,
+                ConnectivityManager.CONNECTIVITY_ACTION -> {
+                    checkWifiConnection()
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityStartRecordingBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
         updateConnectedDevices()
         setupUI()
         checkWifiConnection()
+        registerWifiReceiver()
+    }
+
+    private fun registerWifiReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(ConnectivityManager.CONNECTIVITY_ACTION)
+        }
+        registerReceiver(wifiScanReceiver, filter)
     }
 
     private fun setupUI() {
@@ -191,30 +228,38 @@ class StartRecordingActivity : AppCompatActivity() {
     }
 
     private fun checkWifiConnection() {
-        lifecycleScope.launch {
-            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val network = connectivityManager.activeNetwork
-            val capabilities = connectivityManager.getNetworkCapabilities(network)
+        val network = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(network)
 
-            val isConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val isConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
 
-            if (isConnected) {
-                binding.tvConnectionStatus.text = "✓ Connected"
-                binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_green_dark))
+        if (isConnected) {
+            binding.tvConnectionStatus.text = "✓ Connected"
+            binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_green_dark))
 
-                // Update last connection time
-                lastConnectionTime = System.currentTimeMillis()
+            lastConnectionTime = System.currentTimeMillis()
 
-                // Try to get battery level (placeholder)
-                try {
-                    // TODO: Implement actual battery check when endpoint available
-                    lastBatteryLevel = 85f // Placeholder
-                } catch (e: Exception) {
-                    // Silent fail
-                }
-            } else {
-                showWifiError()
+            // Check if we just connected to a device network
+            val wifiInfo = wifiManager.connectionInfo
+            val currentSsid = wifiInfo.ssid.replace("\"", "")
+            val isDeviceNetwork = recognizedDeviceNames.any { currentSsid.lowercase().startsWith(it) }
+
+            if (isDeviceNetwork && !connectedToDeviceNetwork) {
+                connectedToDeviceNetwork = true
+                onConnectedToDevice(currentSsid)
+            } else if (!isDeviceNetwork) {
+                connectedToDeviceNetwork = false
             }
+
+            // Try to get battery level (placeholder)
+            lifecycleScope.launch {
+                try {
+                    lastBatteryLevel = 85f // Placeholder
+                } catch (e: Exception) { }
+            }
+        } else {
+            connectedToDeviceNetwork = false
+            showWifiError()
         }
     }
 
@@ -309,11 +354,146 @@ class StartRecordingActivity : AppCompatActivity() {
     private fun showReconnectDialog() {
         AlertDialog.Builder(this)
             .setTitle("Data Collection Complete")
-            .setMessage("Data collection has finished. Please reconnect to the device's WiFi network to download the data.")
-            .setPositiveButton("WiFi Settings") { _, _ ->
-                startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+            .setMessage("Data collection has finished. Please reconnect to the device to download data.")
+            .setPositiveButton("Reconnect") { _, _ ->
+                startDeviceDetection()
             }
-            .setNegativeButton("OK", null)
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun startDeviceDetection() {
+        if (!wifiManager.isWifiEnabled) {
+            Toast.makeText(this, "Please enable WiFi first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isScanning = true
+        previousNetworks = getCurrentNetworkSSIDs()
+        showToast("Scanning for devices...")
+
+        startContinuousScanning()
+    }
+
+    private fun startContinuousScanning() {
+        lifecycleScope.launch {
+            while (isScanning) {
+                performWifiScan()
+                delay(SCAN_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun performWifiScan() {
+        wifiManager.startScan()
+    }
+
+    private fun getCurrentNetworkSSIDs(): Set<String> {
+        val scanResults = wifiManager.scanResults
+        return scanResults.map { it.SSID }.toSet()
+    }
+
+    private fun handleScanResults() {
+        if (!isScanning) return
+
+        val scanResults = wifiManager.scanResults
+
+        // Find new networks that match recognized device names
+        val newDevices = scanResults.filter { result ->
+            val ssid = result.SSID.lowercase()
+            val isRecognized = recognizedDeviceNames.any { ssid.startsWith(it) }
+            isRecognized
+        }
+
+        if (newDevices.isNotEmpty()) {
+             // Logic to avoid spamming or to ensure we catch it
+             val actuallyNew = newDevices.filter { !previousNetworks.contains(it.SSID) }
+
+             if (actuallyNew.isNotEmpty()) {
+                 onDeviceDetected(actuallyNew)
+             } else if (newDevices.isNotEmpty() && !connectedToDeviceNetwork) {
+                 // If we are forcing a scan, prompt for any found device
+                 onDeviceDetected(newDevices)
+             }
+        }
+
+        // Update previous networks
+        previousNetworks = scanResults.map { it.SSID }.toSet()
+    }
+
+    private fun onDeviceDetected(devices: List<ScanResult>) {
+        if (connectedToDeviceNetwork) return
+
+        stopScanning()
+
+        val device = devices.first()
+        val deviceName = device.SSID
+
+        AlertDialog.Builder(this)
+            .setTitle("Device Detected!")
+            .setMessage("A new device '$deviceName' has been detected.\n\nWould you like to connect to it?")
+            .setPositiveButton("Connect") { _, _ ->
+                onNetworkSelected(device.toWifiNetwork())
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                // Cancelled
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun onNetworkSelected(network: WifiNetwork) {
+        val message = if (network.isSecured) {
+            "Please connect to this network in WiFi settings.\n\n" +
+            "Network: ${network.ssid}\n" +
+            "Security: ${if (network.capabilities.contains("WPA3")) "WPA3" else if (network.capabilities.contains("WPA2")) "WPA2" else "WPA"}\n\n" +
+            if (recognizedDeviceNames.any { network.ssid.lowercase().startsWith(it) }) {
+                "💡 Tip: Default password for device networks is usually 'password'"
+            } else {
+                "Enter your WiFi password when prompted"
+            }
+        } else {
+            "Please connect to this open network in WiFi settings.\n\nNetwork: ${network.ssid}"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Connect to WiFi")
+            .setMessage(message)
+            .setPositiveButton("Open WiFi Settings") { _, _ ->
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val panelIntent = Intent(Settings.Panel.ACTION_WIFI)
+                        startActivity(panelIntent)
+                    } else {
+                        startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                    }
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun stopScanning() {
+        isScanning = false
+    }
+
+    private fun onConnectedToDevice(ssid: String) {
+        stopScanning()
+
+        AlertDialog.Builder(this)
+            .setTitle("✅ Connection Successful!")
+            .setMessage("You are now connected to $ssid.\n\nReady to proceed to the next step?")
+            .setPositiveButton("Continue") { _, _ ->
+                updateConnectedDevices()
+                updateDeviceSpinner()
+                showToast("Ready to download data")
+            }
+            .setNegativeButton("Stay Here") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setCancelable(false)
             .show()
     }
 
@@ -568,5 +748,11 @@ class StartRecordingActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         countDownTimer?.cancel()
+        stopScanning()
+        try {
+            unregisterReceiver(wifiScanReceiver)
+        } catch (e: Exception) {
+            // Already unregistered
+        }
     }
 }
