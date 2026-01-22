@@ -35,7 +35,7 @@ interface ScallopApi {
     suspend fun sleep(): Response<ResponseBody>
 
     @FormUrlEncoded
-    @POST("delete-files")
+    @POST("api/delete")
     suspend fun deleteFiles(@Field("files") files: List<String>): Response<ResponseBody>
 }
 
