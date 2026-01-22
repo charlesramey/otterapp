@@ -43,7 +43,7 @@ interface ScallopApi {
  * Singleton object for API service
  */
 object ScallopApiService {
-    private const val BASE_URL = "http://scallop.local/"
+    private var currentBaseUrl = "http://scallop.local/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
@@ -56,13 +56,40 @@ object ScallopApiService {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(BASE_URL)
+    private var retrofit = Retrofit.Builder()
+        .baseUrl(currentBaseUrl)
         .client(client)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
-    val api: ScallopApi = retrofit.create(ScallopApi::class.java)
+    var api: ScallopApi = retrofit.create(ScallopApi::class.java)
+        private set
+
+    fun setBaseUrlFromSsid(ssid: String) {
+        val cleanSsid = ssid.replace("\"", "")
+        // If it's a known device network, use its name as the mDNS host
+        // Otherwise, if we are calling this, we might be forcing a connection or defaults.
+        // For now, simply trust the SSID as the hostname suffix.
+        val newUrl = "http://$cleanSsid.local/"
+
+        if (newUrl != currentBaseUrl) {
+            updateBaseUrl(newUrl)
+        }
+    }
+
+    private fun updateBaseUrl(newUrl: String) {
+        currentBaseUrl = newUrl
+        retrofit = Retrofit.Builder()
+            .baseUrl(currentBaseUrl)
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+        api = retrofit.create(ScallopApi::class.java)
+    }
+
+    fun getBaseUrl(): String {
+        return currentBaseUrl
+    }
 }
 
 /**

@@ -141,15 +141,21 @@ class MaintenanceModeActivity : AppCompatActivity() {
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork
         val capabilities = connectivityManager.getNetworkCapabilities(network)
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
 
         val isConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
 
-        binding.tvDeviceStatus.text = if (isConnected) {
+        if (isConnected) {
+            val wifiInfo = wifiManager.connectionInfo
+            val currentSsid = wifiInfo.ssid.replace("\"", "")
+            // Assuming we are connected to a device if we are here, or just update the base url anyway
+            ScallopApiService.setBaseUrlFromSsid(currentSsid)
+
+            binding.tvDeviceStatus.text = "✓ Connected to $currentSsid"
             binding.tvDeviceStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
-            "✓ Connected to Device"
         } else {
+            binding.tvDeviceStatus.text = "✗ Not Connected"
             binding.tvDeviceStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_dark))
-            "✗ Not Connected"
         }
     }
 
@@ -309,12 +315,13 @@ class MaintenanceModeActivity : AppCompatActivity() {
     }
 
     private fun openFirmwareUpdate() {
+        val updateUrl = ScallopApiService.getBaseUrl() + "update"
         AlertDialog.Builder(this)
             .setTitle("Firmware Update")
-            .setMessage("This will open the OTA update page in your browser.\n\nURL: http://192.168.4.1/update")
+            .setMessage("This will open the OTA update page in your browser.\n\nURL: $updateUrl")
             .setPositiveButton("Open Browser") { _, _ ->
                 val intent = Intent(Intent.ACTION_VIEW)
-                intent.data = android.net.Uri.parse("http://192.168.4.1/update")
+                intent.data = android.net.Uri.parse(updateUrl)
                 startActivity(intent)
             }
             .setNegativeButton("Cancel", null)
