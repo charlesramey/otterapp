@@ -286,9 +286,8 @@ class MaintenanceModeActivity : AppCompatActivity() {
             try {
                 binding.progressBarDownload.visibility = View.VISIBLE
 
-                val request = DeleteFilesRequest(files)
                 val response = withContext(Dispatchers.IO) {
-                    ScallopApiService.api.deleteFiles(request)
+                    ScallopApiService.api.deleteFiles(files)
                 }
 
                 if (response.isSuccessful) {
