@@ -222,6 +222,9 @@ class StartRecordingActivity : AppCompatActivity() {
             val isDeviceNetwork = recognizedDeviceNames.any { currentSsid.lowercase().startsWith(it) }
 
             if (isDeviceNetwork) {
+                // Update API Base URL dynamically based on SSID
+                ScallopApiService.setBaseUrlFromSsid(currentSsid)
+
                 binding.tvConnectionStatus.text = "✓ Connected to Device"
                 binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_green_dark))
 
