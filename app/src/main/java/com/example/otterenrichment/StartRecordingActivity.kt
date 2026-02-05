@@ -60,6 +60,7 @@ class StartRecordingActivity : AppCompatActivity() {
     private var isScanning = false
     private var previousNetworks = setOf<String>()
     private var connectedToDeviceNetwork = false
+    private var isConnectionDialogShowing = false
     private val SCAN_INTERVAL_MS = 1000L
 
     private val wifiScanReceiver = object : BroadcastReceiver() {
@@ -232,7 +233,7 @@ class StartRecordingActivity : AppCompatActivity() {
                     connectedToDeviceNetwork = true
                     onConnectedToDevice(currentSsid)
                 }
-            } else {
+            } else if (currentSsid != "<unknown ssid>") {
                 binding.tvConnectionStatus.text = "⚠ WiFi Connected (No Device)"
                 binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.darker_gray))
                 connectedToDeviceNetwork = false
@@ -472,20 +473,41 @@ class StartRecordingActivity : AppCompatActivity() {
 
     private fun onConnectedToDevice(ssid: String) {
         stopScanning()
+        if (isConnectionDialogShowing) return
 
+        // Auto-sync time
+        syncDeviceTime()
+
+        isConnectionDialogShowing = true
         AlertDialog.Builder(this)
             .setTitle("✅ Connection Successful!")
             .setMessage("You are now connected to $ssid.\n\nReady to proceed to the next step?")
             .setPositiveButton("Continue") { _, _ ->
+                isConnectionDialogShowing = false
                 updateConnectedDevices()
                 updateDeviceSpinner()
                 showToast("Ready to download data")
             }
             .setNegativeButton("Stay Here") { dialog, _ ->
+                isConnectionDialogShowing = false
                 dialog.dismiss()
             }
             .setCancelable(false)
             .show()
+    }
+
+    private fun syncDeviceTime() {
+        lifecycleScope.launch {
+            try {
+                // Sync phone time to device (seconds since epoch)
+                val currentTime = System.currentTimeMillis() / 1000
+                withContext(Dispatchers.IO) {
+                    ScallopApiService.api.updateTime(currentTime)
+                }
+            } catch (e: Exception) {
+                // Silent fail for auto-sync, user will check status anyway
+            }
+        }
     }
 
     private fun disableControls(disable: Boolean) {
