@@ -34,9 +34,10 @@ interface ScallopApi {
     @POST("api/sleep")
     suspend fun sleep(): Response<ResponseBody>
 
+    @Headers("Connection: close")
     @FormUrlEncoded
-    @POST("delete-files")
-    suspend fun deleteFiles(@Field("file") files: List<String>): Response<ResponseBody>
+    @POST("api/delete")
+    suspend fun deleteFile(@Field("file") fileName: String): Response<ResponseBody>
 }
 
 /**
@@ -67,9 +68,6 @@ object ScallopApiService {
 
     fun setBaseUrlFromSsid(ssid: String) {
         val cleanSsid = ssid.replace("\"", "")
-        // If it's a known device network, use its name as the mDNS host
-        // Otherwise, if we are calling this, we might be forcing a connection or defaults.
-        // For now, simply trust the SSID as the hostname suffix.
         val newUrl = "http://$cleanSsid.local/"
 
         if (newUrl != currentBaseUrl) {
@@ -101,23 +99,6 @@ data class ScallopFile(
     var isSelected: Boolean = false
 )
 
-data class DeviceStatus(
-    val isConnected: Boolean = false,
-    val voltage: Float = 0f,
-    val sdUsagePercent: Float = 0f,
-    val firmwareVersion: String = "Unknown"
-)
-
 data class StatusResponse(
     val voltage: Float
-)
-
-data class FilesResponse(
-    val files: List<FileItem>,
-    val sd_usage_percent: Float = 0f
-)
-
-data class FileItem(
-    val name: String,
-    val size: Long = 0
 )

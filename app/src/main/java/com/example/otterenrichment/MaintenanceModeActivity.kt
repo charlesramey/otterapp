@@ -1,7 +1,6 @@
 package com.example.otterenrichment
 
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
@@ -43,16 +42,14 @@ class MaintenanceModeActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        // Back button - go back to experienced user menu
+        // Back button
         binding.btnBack.setOnClickListener {
-            val intent = Intent(this, ExperiencedUserActivity::class.java)
-            startActivity(intent)
-            finish()
+            onBackPressedDispatcher.onBackPressed()
         }
 
         // Setup RecyclerView for files
         fileAdapter = FileAdapter(
-            onFileClick = { file -> downloadFile(file) },
+            onFileClick = { file -> if (!isSelectionMode) downloadFile(file) },
             onFileSelect = { file, isSelected ->
                 currentFiles.find { it.name == file.name }?.isSelected = isSelected
             },
@@ -148,7 +145,6 @@ class MaintenanceModeActivity : AppCompatActivity() {
         if (isConnected) {
             val wifiInfo = wifiManager.connectionInfo
             val currentSsid = wifiInfo.ssid.replace("\"", "")
-            // Assuming we are connected to a device if we are here, or just update the base url anyway
             ScallopApiService.setBaseUrlFromSsid(currentSsid)
 
             binding.tvDeviceStatus.text = "✓ Connected to $currentSsid"
@@ -291,23 +287,37 @@ class MaintenanceModeActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 binding.progressBarDownload.visibility = View.VISIBLE
+                var successCount = 0
+                var failCount = 0
 
-                val response = withContext(Dispatchers.IO) {
-                    ScallopApiService.api.deleteFiles(files)
+                for (fileName in files) {
+                    try {
+                        val response = withContext(Dispatchers.IO) {
+                            ScallopApiService.api.deleteFile(fileName)
+                        }
+                        if (response.isSuccessful) {
+                            successCount++
+                        } else {
+                            failCount++
+                        }
+                    } catch (e: Exception) {
+                        failCount++
+                    }
                 }
 
-                if (response.isSuccessful) {
-                    showToast("Files deleted successfully")
-                    // Refresh file list
-                    listFiles()
-                    // Reset selection mode
-                    isSelectionMode = false
-                    toggleDeleteMode()
+                if (failCount == 0) {
+                    showToast("Successfully deleted $successCount files")
                 } else {
-                    showToast("Failed to delete files")
+                    showToast("Deleted $successCount files, failed to delete $failCount files")
                 }
+
+                // Refresh file list
+                listFiles()
+                // Reset selection mode
+                isSelectionMode = false
+                toggleDeleteMode()
             } catch (e: Exception) {
-                showToast("Error: ${e.message}")
+                showToast("Error during deletion: ${e.message}")
             } finally {
                 binding.progressBarDownload.visibility = View.GONE
             }
@@ -320,7 +330,7 @@ class MaintenanceModeActivity : AppCompatActivity() {
             .setTitle("Firmware Update")
             .setMessage("This will open the OTA update page in your browser.\n\nURL: $updateUrl")
             .setPositiveButton("Open Browser") { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW)
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
                 intent.data = android.net.Uri.parse(updateUrl)
                 startActivity(intent)
             }
