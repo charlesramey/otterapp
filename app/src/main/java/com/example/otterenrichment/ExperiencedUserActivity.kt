@@ -20,7 +20,7 @@ class ExperiencedUserActivity : AppCompatActivity() {
     private fun setupUI() {
         // Back button
         binding.btnBack.setOnClickListener {
-            goBackToLauncher()
+            onBackPressedDispatcher.onBackPressed()
         }
 
         // Begin New Collection button
@@ -34,21 +34,13 @@ class ExperiencedUserActivity : AppCompatActivity() {
         }
     }
 
-    private fun goBackToLauncher() {
-        val intent = Intent(this, LauncherActivity::class.java)
-        startActivity(intent)
-        finish()
-    }
-
     private fun navigateToNewCollection() {
-        val intent = Intent(this, BeginNewCollectionActivity::class.java)
+        val intent = Intent(this, StartRecordingActivity::class.java)
         startActivity(intent)
-        finish()
     }
 
     private fun navigateToMaintainCollection() {
         val intent = Intent(this, MaintenanceModeActivity::class.java)
         startActivity(intent)
-        finish()
     }
 }

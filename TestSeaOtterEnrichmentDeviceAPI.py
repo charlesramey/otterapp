@@ -7,7 +7,7 @@ from datetime import datetime
 # --- Configuration ---
 # Assuming your ESP32 is running the SoftAP and is accessible via this hostname/IP.
 BASE_URL = "http://scallop.local"
-# BASE_URL = "http://192.168.4.1" 
+# BASE_URL = "http://192.168.4.1"
 DOWNLOAD_DIR = "downloaded_data"
 MAX_RECONNECT_ATTEMPTS = 10
 RECONNECT_DELAY_S = 2
@@ -17,7 +17,6 @@ def print_response(title, response):
     print(f"\n--- {title} ---")
     print(f"URL: {response.url}")
     print(f"Status Code: {response.status_code}")
-    
     try:
         # Attempt to print JSON content
         print("Response JSON:")
@@ -41,7 +40,6 @@ def wait_for_reconnection():
                 return True
         except requests.exceptions.RequestException:
             pass # Ignore connection error, retry after delay
-        
         time.sleep(RECONNECT_DELAY_S)
 
     print("\n[RECONNECT FAILED] Could not reconnect to the device. Aborting remaining tests.")
@@ -50,7 +48,6 @@ def wait_for_reconnection():
 def test_api():
     """Runs tests against all major API endpoints."""
     print(f"Starting API Test against {BASE_URL}\n")
-    
     # 1. Test Status/Voltage Endpoint (GET)
     try:
         response = requests.get(f"{BASE_URL}/api/status", timeout=5)
@@ -69,11 +66,11 @@ def test_api():
         return
 
     # --- Time Setting ---
-    
+
     # 2. Test Set Time Endpoint (POST)
     current_epoch = int(time.time())
     time_payload = {'time': current_epoch}
-    
+
     try:
         response = requests.post(f"{BASE_URL}/api/time", data=time_payload, timeout=5)
         print_response("2. Set Device Time", response)
@@ -84,10 +81,10 @@ def test_api():
 
     # 3. Test Start Data Collection Endpoint (POST)
     # 10 seconds (10000 ms) for a brief test
-    TEST_DURATION_MS = 10000 
+    TEST_DURATION_MS = 10000
     collect_payload = {'duration_ms': TEST_DURATION_MS}
     print(f"\n-> Starting data collection for {TEST_DURATION_MS / 1000} seconds...")
-    
+
     try:
         response = requests.post(f"{BASE_URL}/api/collect", data=collect_payload, timeout=5)
         print_response("3. Start Data Collection", response)
@@ -97,10 +94,10 @@ def test_api():
             print(f"\n-> Waiting for {TEST_DURATION_MS / 1000} seconds...")
             time.sleep(TEST_DURATION_MS / 1000 + 1)
             print("-> Collection window finished. Wi-Fi should be re-initializing now.")
-        
+
     except requests.exceptions.RequestException as e:
         print(f"Error starting collection: {e}")
-        
+
     # --- Reconnect Logic (NEW) ---
     if not wait_for_reconnection():
         return
@@ -119,20 +116,20 @@ def test_api():
 
         # 5. Test Download File Endpoint (GET)
         # Select the file created recently (or just the last one)
-        target_file = file_list[-1] 
+
+        target_file = file_list[-1]
         filename = target_file['name']
         print(f"\n-> Attempting to download file: {filename}")
-        
+
         response = requests.get(f"{BASE_URL}/api/download?file={filename}", stream=True, timeout=30)
-        
+
         if response.status_code == 200:
             os.makedirs(DOWNLOAD_DIR, exist_ok=True)
             download_path = os.path.join(DOWNLOAD_DIR, filename)
-            
+
             with open(download_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-            
             print(f"5. Download File: Success!")
             print(f"-> File saved to: {download_path} ({os.path.getsize(download_path)} bytes)")
         else:
@@ -140,7 +137,7 @@ def test_api():
 
     except requests.exceptions.RequestException as e:
         print(f"Error during file operation: {e}")
-    
+
     # --- Shutdown ---
 
     # 6. Test Sleep Endpoint (POST)

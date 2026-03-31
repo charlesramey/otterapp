@@ -1,13 +1,18 @@
 package com.example.otterenrichment
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.os.Environment
+import android.provider.Settings
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Toast
@@ -18,9 +23,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.otterenrichment.databinding.ActivityStartRecordingBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -33,6 +40,7 @@ class StartRecordingActivity : AppCompatActivity() {
     private lateinit var binding: ActivityStartRecordingBinding
     private lateinit var fileAdapter: FileAdapter
     private lateinit var wifiManager: WifiManager
+    private lateinit var connectivityManager: ConnectivityManager
     private var currentFiles = listOf<ScallopFile>()
     private var isSelectionMode = false
     private var countDownTimer: CountDownTimer? = null
@@ -48,16 +56,47 @@ class StartRecordingActivity : AppCompatActivity() {
     private var lastConnectionTime: Long = System.currentTimeMillis()
     private var lastBatteryLevel: Float = 0f
 
+    // Scanning variables
+    private var isScanning = false
+    private var previousNetworks = setOf<String>()
+    private var connectedToDeviceNetwork = false
+    private var isConnectionDialogShowing = false
+    private val SCAN_INTERVAL_MS = 1000L
+
+    private val wifiScanReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                WifiManager.SCAN_RESULTS_AVAILABLE_ACTION -> {
+                    handleScanResults()
+                }
+                WifiManager.NETWORK_STATE_CHANGED_ACTION,
+                ConnectivityManager.CONNECTIVITY_ACTION -> {
+                    checkWifiConnection()
+                }
+            }
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityStartRecordingBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
         updateConnectedDevices()
         setupUI()
         checkWifiConnection()
+        registerWifiReceiver()
+    }
+
+    private fun registerWifiReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(ConnectivityManager.CONNECTIVITY_ACTION)
+        }
+        registerReceiver(wifiScanReceiver, filter)
     }
 
     private fun setupUI() {
@@ -80,6 +119,11 @@ class StartRecordingActivity : AppCompatActivity() {
             startDataCollection()
         }
 
+        // Scan button
+        binding.btnScan.setOnClickListener {
+            startDeviceDetection()
+        }
+
         // Device Options buttons
         binding.btnCheckBattery.setOnClickListener {
             checkBattery()
@@ -94,29 +138,10 @@ class StartRecordingActivity : AppCompatActivity() {
             listFiles()
         }
 
-        binding.btnDeleteFiles.setOnClickListener {
-            toggleDeleteMode()
-        }
-
-        binding.btnDeleteSelected.setOnClickListener {
-            deleteSelectedFiles()
-        }
-
-        binding.btnFirmwareUpdate.setOnClickListener {
-            openFirmwareUpdate()
-        }
-
         // Power Off button
         binding.btnPowerOff.setOnClickListener {
             powerOffDevice()
         }
-
-        // Add Additional Device button
-        binding.btnAddDevice.setOnClickListener {
-            val intent = Intent(this, PowerOnDeviceActivity::class.java)
-            startActivity(intent)
-        }
-
         // Setup RecyclerView for files
         fileAdapter = FileAdapter(
             onFileClick = { file -> downloadFile(file) },
@@ -134,7 +159,6 @@ class StartRecordingActivity : AppCompatActivity() {
         // Initially hide sections
         binding.layoutCountdown.visibility = View.GONE
         binding.layoutDataDownload.visibility = View.GONE
-        binding.btnDeleteSelected.visibility = View.GONE
     }
 
     private fun updateConnectedDevices() {
@@ -168,8 +192,6 @@ class StartRecordingActivity : AppCompatActivity() {
             binding.btnCheckBattery.isEnabled = false
             binding.btnDownloadData.isEnabled = false
             binding.btnListFiles.isEnabled = false
-            binding.btnDeleteFiles.isEnabled = false
-            binding.btnFirmwareUpdate.isEnabled = false
             binding.btnPowerOff.isEnabled = false
         } else {
             // Devices connected - populate spinner
@@ -183,37 +205,51 @@ class StartRecordingActivity : AppCompatActivity() {
             binding.btnCheckBattery.isEnabled = true
             binding.btnDownloadData.isEnabled = true
             binding.btnListFiles.isEnabled = true
-            binding.btnDeleteFiles.isEnabled = true
-            binding.btnFirmwareUpdate.isEnabled = true
             binding.btnPowerOff.isEnabled = true
         }
     }
 
     private fun checkWifiConnection() {
-        lifecycleScope.launch {
-            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val network = connectivityManager.activeNetwork
-            val capabilities = connectivityManager.getNetworkCapabilities(network)
+        val network = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(network)
 
-            val isConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val isWifiConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
 
-            if (isConnected) {
-                binding.tvConnectionStatus.text = "✓ Connected"
+        if (isWifiConnected) {
+            val wifiInfo = wifiManager.connectionInfo
+            val currentSsid = wifiInfo.ssid.replace("\"", "")
+            val isDeviceNetwork = recognizedDeviceNames.any { currentSsid.lowercase().startsWith(it) }
+
+            if (isDeviceNetwork) {
+                // Update API Base URL dynamically based on SSID
+                ScallopApiService.setBaseUrlFromSsid(currentSsid)
+
+                binding.tvConnectionStatus.text = "✓ Connected to Device"
                 binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_green_dark))
 
-                // Update last connection time
-                lastConnectionTime = System.currentTimeMillis()
-
-                // Try to get battery level (placeholder)
-                try {
-                    // TODO: Implement actual battery check when endpoint available
-                    lastBatteryLevel = 85f // Placeholder
-                } catch (e: Exception) {
-                    // Silent fail
+                if (!connectedToDeviceNetwork) {
+                    connectedToDeviceNetwork = true
+                    onConnectedToDevice(currentSsid)
                 }
-            } else {
-                showWifiError()
+            } else if (currentSsid != "<unknown ssid>") {
+                binding.tvConnectionStatus.text = "⚠ WiFi Connected (No Device)"
+                binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.darker_gray))
+                connectedToDeviceNetwork = false
             }
+
+            lastConnectionTime = System.currentTimeMillis()
+
+            // Update Spinner Logic
+            updateConnectedDevices()
+            updateDeviceSpinner()
+
+        } else {
+            connectedToDeviceNetwork = false
+            binding.tvConnectionStatus.text = "✗ Disconnected"
+            binding.tvConnectionStatus.setTextColor(ContextCompat.getColor(this@StartRecordingActivity, android.R.color.holo_red_dark))
+
+            updateConnectedDevices()
+            updateDeviceSpinner()
         }
     }
 
@@ -259,10 +295,8 @@ class StartRecordingActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 binding.progressBar.visibility = View.VISIBLE
-                val command = "collect,$duration"
-
                 val response = withContext(Dispatchers.IO) {
-                    ScallopApiService.api.sendCommand(command)
+                    ScallopApiService.api.startCollection(duration)
                 }
 
                 if (response.isSuccessful) {
@@ -301,8 +335,176 @@ class StartRecordingActivity : AppCompatActivity() {
                 binding.layoutCountdown.visibility = View.GONE
                 disableControls(false)
                 showToast("Data collection complete")
+                showReconnectDialog()
             }
         }.start()
+    }
+
+    private fun showReconnectDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Data Collection Complete")
+            .setMessage("Data collection has finished. Please reconnect to the device to download data.")
+            .setPositiveButton("Reconnect") { _, _ ->
+                startDeviceDetection()
+            }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun startDeviceDetection() {
+        if (!wifiManager.isWifiEnabled) {
+            Toast.makeText(this, "Please enable WiFi first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isScanning = true
+        previousNetworks = getCurrentNetworkSSIDs()
+        showToast("Scanning for devices...")
+
+        startContinuousScanning()
+    }
+
+    private fun startContinuousScanning() {
+        lifecycleScope.launch {
+            while (isScanning) {
+                performWifiScan()
+                delay(SCAN_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun performWifiScan() {
+        wifiManager.startScan()
+    }
+
+    private fun getCurrentNetworkSSIDs(): Set<String> {
+        val scanResults = wifiManager.scanResults
+        return scanResults.map { it.SSID }.toSet()
+    }
+
+    private fun handleScanResults() {
+        if (!isScanning) return
+
+        val scanResults = wifiManager.scanResults
+
+        // Find new networks that match recognized device names
+        val newDevices = scanResults.filter { result ->
+            val ssid = result.SSID.lowercase()
+            val isRecognized = recognizedDeviceNames.any { ssid.startsWith(it) }
+            isRecognized
+        }
+
+        if (newDevices.isNotEmpty()) {
+             // Logic to avoid spamming or to ensure we catch it
+             val actuallyNew = newDevices.filter { !previousNetworks.contains(it.SSID) }
+
+             if (actuallyNew.isNotEmpty()) {
+                 onDeviceDetected(actuallyNew)
+             } else if (newDevices.isNotEmpty() && !connectedToDeviceNetwork) {
+                 // If we are forcing a scan, prompt for any found device
+                 onDeviceDetected(newDevices)
+             }
+        }
+
+        // Update previous networks
+        previousNetworks = scanResults.map { it.SSID }.toSet()
+    }
+
+    private fun onDeviceDetected(devices: List<ScanResult>) {
+        if (connectedToDeviceNetwork) return
+
+        stopScanning()
+
+        val device = devices.first()
+        val deviceName = device.SSID
+
+        AlertDialog.Builder(this)
+            .setTitle("Device Detected!")
+            .setMessage("A new device '$deviceName' has been detected.\n\nWould you like to connect to it?")
+            .setPositiveButton("Connect") { _, _ ->
+                onNetworkSelected(device.toWifiNetwork())
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                // Cancelled
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun onNetworkSelected(network: WifiNetwork) {
+        val message = if (network.isSecured) {
+            "Please connect to this network in WiFi settings.\n\n" +
+            "Network: ${network.ssid}\n" +
+            "Security: ${if (network.capabilities.contains("WPA3")) "WPA3" else if (network.capabilities.contains("WPA2")) "WPA2" else "WPA"}\n\n" +
+            if (recognizedDeviceNames.any { network.ssid.lowercase().startsWith(it) }) {
+                "💡 Tip: Default password for device networks is usually 'password'"
+            } else {
+                "Enter your WiFi password when prompted"
+            }
+        } else {
+            "Please connect to this open network in WiFi settings.\n\nNetwork: ${network.ssid}"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Connect to WiFi")
+            .setMessage(message)
+            .setPositiveButton("Open WiFi Settings") { _, _ ->
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val panelIntent = Intent(Settings.Panel.ACTION_WIFI)
+                        startActivity(panelIntent)
+                    } else {
+                        startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                    }
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun stopScanning() {
+        isScanning = false
+    }
+
+    private fun onConnectedToDevice(ssid: String) {
+        stopScanning()
+        if (isConnectionDialogShowing) return
+
+        // Auto-sync time
+        syncDeviceTime()
+
+        isConnectionDialogShowing = true
+        AlertDialog.Builder(this)
+            .setTitle("✅ Connection Successful!")
+            .setMessage("You are now connected to $ssid.\n\nReady to proceed to the next step?")
+            .setPositiveButton("Continue") { _, _ ->
+                isConnectionDialogShowing = false
+                updateConnectedDevices()
+                updateDeviceSpinner()
+                showToast("Ready to download data")
+            }
+            .setNegativeButton("Stay Here") { dialog, _ ->
+                isConnectionDialogShowing = false
+                dialog.dismiss()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun syncDeviceTime() {
+        lifecycleScope.launch {
+            try {
+                // Sync phone time to device (seconds since epoch)
+                val currentTime = System.currentTimeMillis() / 1000
+                withContext(Dispatchers.IO) {
+                    ScallopApiService.api.updateTime(currentTime)
+                }
+            } catch (e: Exception) {
+                // Silent fail for auto-sync, user will check status anyway
+            }
+        }
     }
 
     private fun disableControls(disable: Boolean) {
@@ -321,19 +523,28 @@ class StartRecordingActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                // Placeholder - waiting for ESP32 endpoint
-                kotlinx.coroutines.delay(1000)
+                val response = withContext(Dispatchers.IO) { ScallopApiService.api.getStatus() }
 
-                // Mock data
-                val batteryLevel = 85f
-                lastBatteryLevel = batteryLevel
-                lastConnectionTime = System.currentTimeMillis()
+                if (response.isSuccessful) {
+                    val status = response.body()
+                    val voltage = status?.voltage ?: 0f
+                    // Estimate battery level based on voltage (e.g. 3.3V to 4.2V for LiPo)
+                    // This is a rough estimation
+                    val minVoltage = 3.3f
+                    val maxVoltage = 4.2f
+                    val batteryLevel = ((voltage - minVoltage) / (maxVoltage - minVoltage) * 100).coerceIn(0f, 100f)
 
-                AlertDialog.Builder(this@StartRecordingActivity)
-                    .setTitle("Battery Status")
-                    .setMessage("Device: $selectedDevice\n\nBattery Level: ${String.format("%.1f", batteryLevel)}%\n\nVoltage: N/A\n\n⚠️ Battery monitoring endpoint not yet available on device")
-                    .setPositiveButton("OK", null)
-                    .show()
+                    lastBatteryLevel = batteryLevel
+                    lastConnectionTime = System.currentTimeMillis()
+
+                    AlertDialog.Builder(this@StartRecordingActivity)
+                        .setTitle("Battery Status")
+                        .setMessage("Device: $selectedDevice\n\nBattery Level: ${String.format("%.1f", batteryLevel)}%\n\nVoltage: ${voltage}V")
+                        .setPositiveButton("OK", null)
+                        .show()
+                } else {
+                     showToast("Failed to get status")
+                }
             } catch (e: Exception) {
                 if (!isWifiConnected()) {
                     showWifiError()
@@ -360,8 +571,51 @@ class StartRecordingActivity : AppCompatActivity() {
                 }
 
                 if (response.isSuccessful) {
-                    val html = response.body() ?: ""
-                    parseFilesFromHtml(html)
+                    val responseBodyString = response.body()?.string() ?: "{}"
+                    val jsonObject = JSONObject(responseBodyString)
+
+                    val filesArray = jsonObject.optJSONArray("files")
+                    val files = mutableListOf<ScallopFile>()
+
+                    if (filesArray != null) {
+                        for (i in 0 until filesArray.length()) {
+                            val fileObj = filesArray.optJSONObject(i)
+                            if (fileObj != null) {
+                                val name = fileObj.optString("name", "unknown")
+                                val size = fileObj.optLong("size", 0)
+                                files.add(ScallopFile(name, size))
+                            }
+                        }
+                    }
+
+                    // Sort files: Newest date first
+                    val sortedFiles = files.sortedByDescending { file ->
+                        // Attempt to parse date from filename: scallop_yyyy-MM-dd_HH-mm-ss.csv
+                        // If parsing fails, use 0 so they appear at the end (or just string sort)
+                        try {
+                            if (file.name.startsWith("scallop_")) {
+                                val datePart = file.name.substringAfter("scallop_").substringBefore(".")
+                                val format = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
+                                format.parse(datePart)?.time ?: 0L
+                            } else {
+                                0L
+                            }
+                        } catch (e: Exception) {
+                            0L
+                        }
+                    }
+
+                    currentFiles = sortedFiles
+                    fileAdapter.submitList(sortedFiles)
+
+                    if (sortedFiles.isEmpty()) {
+                        showToast("No files found on SD card")
+                    } else {
+                        showToast("Found ${sortedFiles.size} files")
+                    }
+
+                    val usage = jsonObject.optDouble("sd_usage_percent", 0.0).toFloat()
+                    binding.tvSdUsage.text = "SD Card: ${String.format("%.1f", usage)}% used"
                     lastConnectionTime = System.currentTimeMillis()
                 } else {
                     showToast("Failed to list files")
@@ -376,101 +630,6 @@ class StartRecordingActivity : AppCompatActivity() {
                 binding.progressBar.visibility = View.GONE
             }
         }
-    }
-
-    private fun parseFilesFromHtml(html: String) {
-        val files = mutableListOf<ScallopFile>()
-
-        // Parse SD card usage
-        val usageRegex = """SD Card Usage:</b>\s*([\d.]+)%""".toRegex()
-        val usageMatch = usageRegex.find(html)
-        val usage = usageMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
-        binding.tvSdUsage.text = "SD Card: ${String.format("%.1f", usage)}% used"
-
-        // Parse file list
-        val fileRegex = """onclick="requestDownload\('([^']+)'\)">([^<]+)\s*\((\d+)\s*bytes\)""".toRegex()
-        fileRegex.findAll(html).forEach { match ->
-            val fileName = match.groupValues[1]
-            val fileSize = match.groupValues[3].toLongOrNull() ?: 0
-            files.add(ScallopFile(fileName, fileSize))
-        }
-
-        currentFiles = files
-        fileAdapter.submitList(files)
-
-        if (files.isEmpty()) {
-            showToast("No files found on SD card")
-        } else {
-            showToast("Found ${files.size} files")
-        }
-    }
-
-    private fun toggleDeleteMode() {
-        isSelectionMode = !isSelectionMode
-
-        fileAdapter = FileAdapter(
-            onFileClick = { file -> if (!isSelectionMode) downloadFile(file) },
-            onFileSelect = { file, isSelected ->
-                currentFiles.find { it.name == file.name }?.isSelected = isSelected
-            },
-            isSelectionMode = isSelectionMode
-        )
-
-        binding.recyclerViewFiles.adapter = fileAdapter
-        fileAdapter.submitList(currentFiles.toList())
-
-        binding.btnDeleteSelected.visibility = if (isSelectionMode) View.VISIBLE else View.GONE
-        binding.btnDeleteFiles.text = if (isSelectionMode) "Cancel" else "Delete Files"
-    }
-
-    private fun deleteSelectedFiles() {
-        if (!isWifiConnected()) {
-            showWifiError()
-            return
-        }
-
-        val selectedFiles = currentFiles.filter { it.isSelected }
-
-        if (selectedFiles.isEmpty()) {
-            showToast("No files selected")
-            return
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Delete Files")
-            .setMessage("Delete ${selectedFiles.size} file(s)?")
-            .setPositiveButton("Delete") { _, _ ->
-                lifecycleScope.launch {
-                    try {
-                        binding.progressBar.visibility = View.VISIBLE
-                        val fileNames = selectedFiles.map { it.name }
-                        val requestBody = mapOf("files" to fileNames)
-
-                        val response = withContext(Dispatchers.IO) {
-                            ScallopApiService.api.deleteFiles(requestBody)
-                        }
-
-                        if (response.isSuccessful) {
-                            showToast("Files deleted")
-                            toggleDeleteMode()
-                            listFiles()
-                            lastConnectionTime = System.currentTimeMillis()
-                        } else {
-                            showToast("Failed to delete files")
-                        }
-                    } catch (e: Exception) {
-                        if (!isWifiConnected()) {
-                            showWifiError()
-                        } else {
-                            showToast("Error: ${e.message}")
-                        }
-                    } finally {
-                        binding.progressBar.visibility = View.GONE
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun downloadFile(file: ScallopFile) {
@@ -528,24 +687,6 @@ class StartRecordingActivity : AppCompatActivity() {
         }
     }
 
-    private fun openFirmwareUpdate() {
-        if (!isWifiConnected()) {
-            showWifiError()
-            return
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Firmware Update")
-            .setMessage("This will open the OTA update page in your browser.\n\nURL: http://192.168.4.1/update")
-            .setPositiveButton("Open Browser") { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW)
-                intent.data = android.net.Uri.parse("http://192.168.4.1/update")
-                startActivity(intent)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
     private fun powerOffDevice() {
         if (!isWifiConnected()) {
             showWifiError()
@@ -560,7 +701,7 @@ class StartRecordingActivity : AppCompatActivity() {
                     try {
                         binding.progressBar.visibility = View.VISIBLE
                         val response = withContext(Dispatchers.IO) {
-                            ScallopApiService.api.sendCommand("sleep")
+                            ScallopApiService.api.sleep()
                         }
 
                         if (response.isSuccessful) {
@@ -606,5 +747,11 @@ class StartRecordingActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         countDownTimer?.cancel()
+        stopScanning()
+        try {
+            unregisterReceiver(wifiScanReceiver)
+        } catch (e: Exception) {
+            // Already unregistered
+        }
     }
 }

@@ -14,29 +14,37 @@ import java.util.concurrent.TimeUnit
  */
 interface ScallopApi {
 
-    @FormUrlEncoded
-    @POST("command")
-    suspend fun sendCommand(@Field("command") command: String): Response<String>
+    @GET("api/status")
+    suspend fun getStatus(): Response<StatusResponse>
 
     @FormUrlEncoded
-    @POST("update-time")
-    suspend fun updateTime(@Field("timestamp") timestamp: Long): Response<String>
+    @POST("api/time")
+    suspend fun updateTime(@Field("time") time: Long): Response<ResponseBody>
 
-    @GET("list-files")
-    suspend fun listFiles(): Response<String>
+    @GET("api/files")
+    suspend fun listFiles(): Response<ResponseBody>
 
-    @GET("request-download")
+    @GET("api/download")
     suspend fun requestDownload(@Query("file") fileName: String): Response<ResponseBody>
 
-    @POST("delete-files")
-    suspend fun deleteFiles(@Body fileNames: Map<String, List<String>>): Response<String>
+    @FormUrlEncoded
+    @POST("api/collect")
+    suspend fun startCollection(@Field("duration_ms") durationMs: Long): Response<ResponseBody>
+
+    @POST("api/sleep")
+    suspend fun sleep(): Response<ResponseBody>
+
+    @Headers("Connection: close")
+    @FormUrlEncoded
+    @POST("api/delete")
+    suspend fun deleteFile(@Field("file") fileName: String): Response<ResponseBody>
 }
 
 /**
  * Singleton object for API service
  */
 object ScallopApiService {
-    private const val BASE_URL = "http://scallop.local/"
+    private var currentBaseUrl = "http://scallop.local/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
@@ -49,13 +57,37 @@ object ScallopApiService {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(BASE_URL)
+    private var retrofit = Retrofit.Builder()
+        .baseUrl(currentBaseUrl)
         .client(client)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
-    val api: ScallopApi = retrofit.create(ScallopApi::class.java)
+    var api: ScallopApi = retrofit.create(ScallopApi::class.java)
+        private set
+
+    fun setBaseUrlFromSsid(ssid: String) {
+        val cleanSsid = ssid.replace("\"", "")
+        val newUrl = "http://$cleanSsid.local/"
+
+        if (newUrl != currentBaseUrl) {
+            updateBaseUrl(newUrl)
+        }
+    }
+
+    private fun updateBaseUrl(newUrl: String) {
+        currentBaseUrl = newUrl
+        retrofit = Retrofit.Builder()
+            .baseUrl(currentBaseUrl)
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+        api = retrofit.create(ScallopApi::class.java)
+    }
+
+    fun getBaseUrl(): String {
+        return currentBaseUrl
+    }
 }
 
 /**
@@ -67,9 +99,6 @@ data class ScallopFile(
     var isSelected: Boolean = false
 )
 
-data class DeviceStatus(
-    val isConnected: Boolean = false,
-    val voltage: Float = 0f,
-    val sdUsagePercent: Float = 0f,
-    val firmwareVersion: String = "Unknown"
+data class StatusResponse(
+    val voltage: Float
 )

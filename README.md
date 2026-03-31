@@ -64,7 +64,7 @@ Once connected to the device:
 - Shows on every app launch
 - 5-step tutorial wizard
 - WiFi state monitoring
-- Network scanning and detection
+- Network scanning and detection 
 - Requirement checking and auto-progression
 
 **MainActivity**

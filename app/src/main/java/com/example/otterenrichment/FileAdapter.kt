@@ -3,8 +3,7 @@ package com.example.otterenrichment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CheckBox
-import android.widget.TextView
+import android.widget.CheckedTextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -20,7 +19,7 @@ class FileAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FileViewHolder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(android.R.layout.simple_list_item_multiple_choice, parent, false)
+            .inflate(R.layout.item_file, parent, false)
         return FileViewHolder(view, onFileClick, onFileSelect, isSelectionMode)
     }
 
@@ -34,8 +33,8 @@ class FileAdapter(
         private val onFileSelect: (ScallopFile, Boolean) -> Unit,
         private val isSelectionMode: Boolean
     ) : RecyclerView.ViewHolder(itemView) {
-
-        private val checkbox: CheckBox = itemView.findViewById(android.R.id.text1) as CheckBox
+        private val checkedTextView: CheckedTextView = itemView.findViewById(android.R.id.text1) as CheckedTextView
+        private val defaultCheckMark = checkedTextView.checkMarkDrawable
 
         fun bind(file: ScallopFile) {
             val sizeKb = file.size / 1024.0
@@ -45,16 +44,19 @@ class FileAdapter(
                 String.format("%.2f KB", sizeKb)
             }
 
-            checkbox.text = "${file.name} ($sizeText)"
-            checkbox.isChecked = file.isSelected
-
+            checkedTextView.text = "${file.name} ($sizeText)"
+            checkedTextView.isChecked = file.isSelected
             if (isSelectionMode) {
-                checkbox.visibility = View.VISIBLE
-                checkbox.setOnCheckedChangeListener { _, isChecked ->
-                    onFileSelect(file, isChecked)
+                checkedTextView.checkMarkDrawable = defaultCheckMark
+                // In multiple choice mode, click toggles selection
+                itemView.setOnClickListener {
+                    val newChecked = !checkedTextView.isChecked
+                    checkedTextView.isChecked = newChecked
+                    onFileSelect(file, newChecked)
                 }
             } else {
-                checkbox.visibility = View.GONE
+                checkedTextView.checkMarkDrawable = null
+                // In normal mode, click triggers action (download)
                 itemView.setOnClickListener {
                     onFileClick(file)
                 }

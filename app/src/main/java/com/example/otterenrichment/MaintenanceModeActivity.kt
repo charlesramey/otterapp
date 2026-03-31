@@ -1,7 +1,6 @@
 package com.example.otterenrichment
 
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
@@ -18,9 +17,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class MaintenanceModeActivity : AppCompatActivity() {
 
@@ -40,16 +42,14 @@ class MaintenanceModeActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        // Back button - go back to experienced user menu
+        // Back button
         binding.btnBack.setOnClickListener {
-            val intent = Intent(this, ExperiencedUserActivity::class.java)
-            startActivity(intent)
-            finish()
+            onBackPressedDispatcher.onBackPressed()
         }
 
         // Setup RecyclerView for files
         fileAdapter = FileAdapter(
-            onFileClick = { file -> downloadFile(file) },
+            onFileClick = { file -> if (!isSelectionMode) downloadFile(file) },
             onFileSelect = { file, isSelected ->
                 currentFiles.find { it.name == file.name }?.isSelected = isSelected
             },
@@ -75,6 +75,15 @@ class MaintenanceModeActivity : AppCompatActivity() {
             updateConnectionStatus()
         }
 
+        // Advanced Options Section
+        binding.btnFirmwareUpdate.setOnClickListener {
+            openFirmwareUpdate()
+        }
+
+        binding.btnSleepMode.setOnClickListener {
+            sendSleepCommand()
+        }
+
         // Data Download Section
         binding.btnListFiles.setOnClickListener {
             listFiles()
@@ -93,21 +102,30 @@ class MaintenanceModeActivity : AppCompatActivity() {
     }
 
     private fun checkPowerLevels() {
-        // Placeholder for power level checking
         binding.progressBarPower.visibility = View.VISIBLE
 
         lifecycleScope.launch {
             try {
-                // Simulate checking (will be replaced when ESP32 provides endpoint)
-                kotlinx.coroutines.delay(1000)
+                val response = withContext(Dispatchers.IO) { ScallopApiService.api.getStatus() }
 
-                // Placeholder values
-                binding.tvBatteryLevel.text = "Battery: N/A"
-                binding.tvVoltage.text = "Voltage: N/A"
-                binding.tvPowerStatus.text = "⚠️ Power monitoring not yet supported by device"
-                binding.tvPowerStatus.setTextColor(ContextCompat.getColor(this@MaintenanceModeActivity, android.R.color.holo_orange_dark))
+                if (response.isSuccessful) {
+                    val status = response.body()
+                    val voltage = status?.voltage ?: 0f
+                    // Estimate battery level
+                    val minVoltage = 3.3f
+                    val maxVoltage = 4.2f
+                    val batteryLevel = ((voltage - minVoltage) / (maxVoltage - minVoltage) * 100).coerceIn(0f, 100f)
 
-                showToast("Power level endpoint not available on device")
+                    binding.tvBatteryLevel.text = "Battery: ${String.format("%.1f", batteryLevel)}%"
+                    binding.tvVoltage.text = "Voltage: ${voltage}V"
+                    binding.tvPowerStatus.text = "✓ Power levels normal"
+                    binding.tvPowerStatus.setTextColor(ContextCompat.getColor(this@MaintenanceModeActivity, android.R.color.holo_green_dark))
+                } else {
+                    binding.tvBatteryLevel.text = "Battery: Unknown"
+                    binding.tvVoltage.text = "Voltage: Unknown"
+                    binding.tvPowerStatus.text = "✗ Failed to read power levels"
+                    binding.tvPowerStatus.setTextColor(ContextCompat.getColor(this@MaintenanceModeActivity, android.R.color.holo_red_dark))
+                }
             } catch (e: Exception) {
                 showToast("Error checking power: ${e.message}")
             } finally {
@@ -120,15 +138,20 @@ class MaintenanceModeActivity : AppCompatActivity() {
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork
         val capabilities = connectivityManager.getNetworkCapabilities(network)
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
 
         val isConnected = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
 
-        binding.tvDeviceStatus.text = if (isConnected) {
+        if (isConnected) {
+            val wifiInfo = wifiManager.connectionInfo
+            val currentSsid = wifiInfo.ssid.replace("\"", "")
+            ScallopApiService.setBaseUrlFromSsid(currentSsid)
+
+            binding.tvDeviceStatus.text = "✓ Connected to $currentSsid"
             binding.tvDeviceStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
-            "✓ Connected to Device"
         } else {
+            binding.tvDeviceStatus.text = "✗ Not Connected"
             binding.tvDeviceStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_dark))
-            "✗ Not Connected"
         }
     }
 
@@ -171,8 +194,49 @@ class MaintenanceModeActivity : AppCompatActivity() {
                 }
 
                 if (response.isSuccessful) {
-                    val html = response.body() ?: ""
-                    parseFilesFromHtml(html)
+                    val responseBodyString = response.body()?.string() ?: "{}"
+                    val jsonObject = JSONObject(responseBodyString)
+
+                    val filesArray = jsonObject.optJSONArray("files")
+                    val files = mutableListOf<ScallopFile>()
+
+                    if (filesArray != null) {
+                        for (i in 0 until filesArray.length()) {
+                            val fileObj = filesArray.optJSONObject(i)
+                            if (fileObj != null) {
+                                val name = fileObj.optString("name", "unknown")
+                                val size = fileObj.optLong("size", 0)
+                                files.add(ScallopFile(name, size))
+                            }
+                        }
+                    }
+
+                    // Sort files: Newest date first
+                    val sortedFiles = files.sortedByDescending { file ->
+                        try {
+                            if (file.name.startsWith("scallop_")) {
+                                val datePart = file.name.substringAfter("scallop_").substringBefore(".")
+                                val format = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
+                                format.parse(datePart)?.time ?: 0L
+                            } else {
+                                0L
+                            }
+                        } catch (e: Exception) {
+                            0L
+                        }
+                    }
+
+                    currentFiles = sortedFiles
+                    fileAdapter.submitList(sortedFiles)
+
+                    if (sortedFiles.isEmpty()) {
+                        showToast("No files found on SD card")
+                    } else {
+                        showToast("Found ${sortedFiles.size} files")
+                    }
+
+                    val usage = jsonObject.optDouble("sd_usage_percent", 0.0).toFloat()
+                    binding.tvSdUsage.text = "SD Card: ${String.format("%.1f", usage)}% used"
                 } else {
                     showToast("Failed to list files")
                 }
@@ -181,33 +245,6 @@ class MaintenanceModeActivity : AppCompatActivity() {
             } finally {
                 binding.progressBarDownload.visibility = View.GONE
             }
-        }
-    }
-
-    private fun parseFilesFromHtml(html: String) {
-        val files = mutableListOf<ScallopFile>()
-
-        // Parse SD card usage
-        val usageRegex = """SD Card Usage:</b>\s*([\d.]+)%""".toRegex()
-        val usageMatch = usageRegex.find(html)
-        val usage = usageMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
-        binding.tvSdUsage.text = "SD Card: ${String.format("%.1f", usage)}% used"
-
-        // Parse file list
-        val fileRegex = """onclick="requestDownload\('([^']+)'\)">([^<]+)\s*\((\d+)\s*bytes\)""".toRegex()
-        fileRegex.findAll(html).forEach { match ->
-            val fileName = match.groupValues[1]
-            val fileSize = match.groupValues[3].toLongOrNull() ?: 0
-            files.add(ScallopFile(fileName, fileSize))
-        }
-
-        currentFiles = files
-        fileAdapter.submitList(files)
-
-        if (files.isEmpty()) {
-            showToast("No files found on SD card")
-        } else {
-            showToast("Found ${files.size} files")
         }
     }
 
@@ -230,38 +267,98 @@ class MaintenanceModeActivity : AppCompatActivity() {
     }
 
     private fun deleteSelectedFiles() {
-        val selectedFiles = currentFiles.filter { it.isSelected }
-
-        if (selectedFiles.isEmpty()) {
+        val filesToDelete = currentFiles.filter { it.isSelected }.map { it.name }
+        if (filesToDelete.isEmpty()) {
             showToast("No files selected")
             return
         }
 
         AlertDialog.Builder(this)
             .setTitle("Delete Files")
-            .setMessage("Delete ${selectedFiles.size} file(s)?")
+            .setMessage("Are you sure you want to delete ${filesToDelete.size} files?")
             .setPositiveButton("Delete") { _, _ ->
+                performDeleteFiles(filesToDelete)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun performDeleteFiles(files: List<String>) {
+        lifecycleScope.launch {
+            try {
+                binding.progressBarDownload.visibility = View.VISIBLE
+                var successCount = 0
+                var failCount = 0
+
+                for (fileName in files) {
+                    try {
+                        val response = withContext(Dispatchers.IO) {
+                            ScallopApiService.api.deleteFile(fileName)
+                        }
+                        if (response.isSuccessful) {
+                            successCount++
+                        } else {
+                            failCount++
+                        }
+                    } catch (e: Exception) {
+                        failCount++
+                    }
+                }
+
+                if (failCount == 0) {
+                    showToast("Successfully deleted $successCount files")
+                } else {
+                    showToast("Deleted $successCount files, failed to delete $failCount files")
+                }
+
+                // Refresh file list
+                listFiles()
+                // Reset selection mode
+                isSelectionMode = false
+                toggleDeleteMode()
+            } catch (e: Exception) {
+                showToast("Error during deletion: ${e.message}")
+            } finally {
+                binding.progressBarDownload.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun openFirmwareUpdate() {
+        val updateUrl = ScallopApiService.getBaseUrl() + "update"
+        AlertDialog.Builder(this)
+            .setTitle("Firmware Update")
+            .setMessage("This will open the OTA update page in your browser.\n\nURL: $updateUrl")
+            .setPositiveButton("Open Browser") { _, _ ->
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                intent.data = android.net.Uri.parse(updateUrl)
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun sendSleepCommand() {
+        AlertDialog.Builder(this)
+            .setTitle("Enter Sleep Mode")
+            .setMessage("Device will enter sleep mode. Are you sure?")
+            .setPositiveButton("Yes") { _, _ ->
                 lifecycleScope.launch {
                     try {
-                        binding.progressBarDownload.visibility = View.VISIBLE
-                        val fileNames = selectedFiles.map { it.name }
-                        val requestBody = mapOf("files" to fileNames)
-
+                        binding.progressBarPower.visibility = View.VISIBLE
                         val response = withContext(Dispatchers.IO) {
-                            ScallopApiService.api.deleteFiles(requestBody)
+                            ScallopApiService.api.sleep()
                         }
 
                         if (response.isSuccessful) {
-                            showToast("Files deleted")
-                            toggleDeleteMode()
-                            listFiles()
+                            showToast("Device entering sleep mode")
                         } else {
-                            showToast("Failed to delete files")
+                            showToast("Failed to send sleep command")
                         }
                     } catch (e: Exception) {
                         showToast("Error: ${e.message}")
                     } finally {
-                        binding.progressBarDownload.visibility = View.GONE
+                        binding.progressBarPower.visibility = View.GONE
                     }
                 }
             }

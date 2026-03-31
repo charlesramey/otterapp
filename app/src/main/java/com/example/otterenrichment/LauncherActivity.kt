@@ -32,13 +32,11 @@ class LauncherActivity : AppCompatActivity() {
     private fun navigateToTutorial() {
         val intent = Intent(this, TutorialActivity::class.java)
         startActivity(intent)
-        finish()
     }
 
     private fun navigateToExperiencedFlow() {
         // For now, navigate to experienced user options
         val intent = Intent(this, ExperiencedUserActivity::class.java)
         startActivity(intent)
-        finish()
     }
 }

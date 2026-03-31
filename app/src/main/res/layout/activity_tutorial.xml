@@ -118,7 +118,6 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:padding="12dp"
-                android:background="#E3F2FD"
                 android:textSize="14sp"
                 android:textStyle="italic" />
 
@@ -128,7 +127,6 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:textSize="14sp"
-                android:textColor="#666666"
                 android:textStyle="italic" />
         </LinearLayout>
     </ScrollView>
@@ -179,8 +177,7 @@
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerWifiNetworks"
             android:layout_width="match_parent"
-            android:layout_height="120dp"
-            android:background="#F5F5F5" />
+            android:layout_height="120dp" />
     </LinearLayout>
 
     <!-- Navigation Buttons -->
